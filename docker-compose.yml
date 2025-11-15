@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chainlit-app
+    ports:
+      - "${CHAINLIT_PORT:-8000}:8000"
+    volumes:
+      # Mount code for hot reload in dev mode
+      - .:/app
+      # Persist database
+      - chainlit_db:/app/data
+      # Mount certificates for TLS (if available)
+      - ./.certs:/certs:ro
+    env_file:
+      - .env
+    environment:
+      - CHAINLIT_HOST=0.0.0.0
+      - CHAINLIT_PORT=8000
+      # Suppress DEBUG level logs
+      - LOG_LEVEL=INFO
+      # Explicitly unset DEBUG to prevent Chainlit CLI from enabling debug mode
+      # (some .env files set DEBUG=true for other tools)
+      - DEBUG=
+      # Google OAuth credentials (can be overridden via .env file)
+      - OAUTH_GOOGLE_CLIENT_ID=${OAUTH_GOOGLE_CLIENT_ID:-}
+      - OAUTH_GOOGLE_CLIENT_SECRET=${OAUTH_GOOGLE_CLIENT_SECRET:-}
+      - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI:-}
+      # Chainlit auth secret (required for authentication)
+      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-}
+      # No-login mode: set to any non-empty value (e.g., "1", "true") to bypass authentication in dev
+      - CHAINLIT_NO_LOGIN=${CHAINLIT_NO_LOGIN:-}
+      # Local dev user ID: email/identifier for auto-login when OAuth is not configured
+      - LOCAL_USER_ID=${LOCAL_USER_ID:-user@chainlit.local.ai}
+    command: sh -c "python /app/scripts/init_db.py && chainlit run app.py --host 0.0.0.0 --port 8000 --watch"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  chainlit_db:
+    driver: local
+

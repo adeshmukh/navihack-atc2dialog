@@ -1,0 +1,27 @@
+version: '3.8'
+
+# HTTPS overlay for development
+# Use with: docker compose -f docker-compose.yml -f docker-compose.https.yml up
+
+services:
+  # Caddy reverse proxy for HTTPS termination
+  proxy:
+    image: caddy:2
+    container_name: chainlit-proxy
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./ops/https/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./.certs:/certs:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - default
+
+  # Override app service to remove direct port exposure (proxy handles it)
+  app:
+    ports: []
+    # App runs on internal network only, accessed via proxy
+

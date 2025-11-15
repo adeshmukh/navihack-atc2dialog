@@ -1,0 +1,26 @@
+# Copy this file to terraform.tfvars and adjust values for your environment.
+
+project_id  = "my-gcp-project"
+bucket_name = "chainlit-bootstrap-artifacts-dev"
+location    = "US"
+
+storage_class               = "STANDARD"
+force_destroy               = false
+enable_versioning           = true
+uniform_bucket_level_access = true
+
+labels = {
+  environment = "dev"
+  project     = "chainlit-bootstrap"
+}
+
+lifecycle_rules = [
+  {
+    action = {
+      type = "Delete"
+    }
+    condition = {
+      age = 365
+    }
+  }
+]

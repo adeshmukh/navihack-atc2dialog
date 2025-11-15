@@ -1,0 +1,106 @@
+[project]
+# Whether to enable telemetry (default: true). No personal data is collected.
+enable_telemetry = false
+
+# List of environment variables to be provided by each user to use the app.
+user_env = [
+    "OPENAI_API_KEY",
+    "OAUTH_GOOGLE_CLIENT_ID",
+    "OAUTH_GOOGLE_CLIENT_SECRET",
+    "OAUTH_REDIRECT_URI",
+    "CHAINLIT_AUTH_SECRET",
+    "LOCAL_USER_ID",
+]
+
+[features]
+# Show the prompt playground
+prompt_playground = true
+
+# Process and display HTML in messages
+process_html = true
+
+# Process and display Math blocks in messages (LaTeX)
+process_math = true
+
+# Authorize users to chat with the app
+# If false, users must be added to the .chainlit/users.json file
+# See https://docs.chainlit.io/authentication/overview
+[features.authentication]
+# Enable authentication
+# This is dynamically configured at startup based on environment variables:
+#   - No-login mode (CHAINLIT_NO_LOGIN=1): disabled
+#   - Local dev mode (no OAuth credentials): enabled with header auth
+#   - OAuth mode (OAuth credentials set): enabled with Google OAuth
+enabled = true
+# Provider: "google", "github", "azure-ad", "okta", "auth0", "generic-oauth", "header"
+# This is dynamically configured at startup
+provider = "google"
+
+# Allow users to upload files with messages
+[features.spontaneous_file_upload]
+enabled = true
+accept = ["*/*"]
+max_files = 10
+max_size_mb = 10
+
+# Enable third parties caching (e.g LangChain cache)
+[features.cache]
+enabled = false
+
+# Allow users to create and switch between different threads
+[features.persistent_sessions]
+enabled = true
+
+# Allow users to use the microphone
+[features.audio]
+enabled = true
+
+[UI]
+# Name of the app and chatbot.
+name = "Chainlit Starter App"
+
+# Show the prompt playground
+show_prompt_playground = true
+
+# Description of the app and chatbot. This is used for HTML tags.
+description = "A Chainlit starter application with voice input and document QA"
+
+# Large size content are by default collapsed for a cleaner ui
+default_collapse_content = true
+
+# The default value for the expand messages settings.
+default_expand_messages = false
+
+# Hide the chain of thought details from the user in the UI.
+hide_cot = false
+
+# Link to your github repo. This will add a github button in the UI's header.
+# github = "https://github.com/your-repo"
+
+# Specify a CSS file that can be used to customize the user interface.
+# The CSS file can be served from the public directory or via an external link.
+# custom_css = "/public/test.css"
+
+# Specify a Javascript file that can be used to customize the user interface.
+# The Javascript file can be served from the public directory.
+# custom_js = "/public/test.js"
+
+# Specify a font url to use a custom font.
+# custom_font = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+
+# Specify a build directory to override the default build directory.
+# build_directory = "./build"
+
+# Override default MUI light theme. (Check the dark theme option below for a dark theme example)
+# [UI.theme.light]
+#   background = "#FAFAFA"
+#   paper = "#FFFFFF"
+
+# Override default MUI dark theme.
+# [UI.theme.dark]
+#   background = "#121212"
+#   paper = "#1E1E1E"
+
+[meta]
+generated_by = "1.0.0"
+
