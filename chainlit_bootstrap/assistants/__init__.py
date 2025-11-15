@@ -20,6 +20,7 @@ class AssistantDescriptor:
     handle_message: Callable[[str, dict], Awaitable[str]]
     handle_file: Callable[[str, dict], Awaitable[str]] | None = None
     handle_search: Callable[[str, dict], Awaitable[str]] | None = None
+    enabled: bool = True
 
 
 class AssistantRegistry:
@@ -89,6 +90,12 @@ def discover_assistants() -> AssistantRegistry:
                 logger.warning(
                     f"ASSISTANT_DESCRIPTOR in {module_name} is not an AssistantDescriptor instance. "
                     f"Got {type(descriptor)}. Skipping."
+                )
+                continue
+
+            if not descriptor.enabled:
+                logger.info(
+                    f"Assistant {descriptor.name} (command: /{descriptor.command}) is disabled. Skipping."
                 )
                 continue
 

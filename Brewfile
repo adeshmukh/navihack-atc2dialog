@@ -9,3 +9,5 @@ cask "google-cloud-sdk"
 # Install mkcert for creating locally-trusted certificates.
 brew "mkcert"
 
+# ffmpeg for OpenAI whisper
+brew "ffmpeg"

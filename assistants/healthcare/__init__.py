@@ -8,5 +8,6 @@ ASSISTANT_DESCRIPTOR = AssistantDescriptor(
     command="health",
     description="Helps patients schedule appointments and retrieve lab results",
     handle_message=handle_message,
+    enabled=False,
 )
 
