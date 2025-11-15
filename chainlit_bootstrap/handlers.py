@@ -1,5 +1,6 @@
 """Chainlit event handlers."""
 
+import asyncio
 import logging
 import random
 import uuid
@@ -12,6 +13,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 import chainlit as cl
 
 from .assistants import AssistantDescriptor, discover_assistants
+from .audio import is_audio_file, transcribe_audio
 from .charts import histogram_from_values
 from .llm import embeddings, llm, text_splitter
 from .search import (
@@ -24,6 +26,71 @@ logger = logging.getLogger(__name__)
 
 # Initialize assistant registry at module level
 _assistant_registry = discover_assistants()
+
+
+async def _process_audio_file(file: cl.File) -> bool:
+    """
+    Process an uploaded audio file by transcribing it with OpenAI Whisper API.
+
+    Args:
+        file: Chainlit File object representing the uploaded audio file
+
+    Returns:
+        True if successful, False otherwise
+    """
+    logger.info(f"Starting audio processing for file: {file.name}, path: {file.path}")
+    progress_msg = cl.Message(content=f"🎤 Processing audio file `{file.name}`...")
+    await progress_msg.send()
+
+    try:
+        # Transcribe the audio file (wrap sync function in async)
+        logger.info(f"Calling transcribe_audio for {file.path}")
+        result = await cl.make_async(transcribe_audio)(file.path, file.name)
+        logger.info(f"Transcription successful: {len(result.get('transcription', ''))} characters")
+
+        # Create audio element for playback
+        audio_element = cl.Audio(
+            path=result["audio_path"],
+            name=file.name,
+            display="inline",
+        )
+
+        # Send response with transcription and audio player
+        transcription_text = result["transcription"]
+        response_content = f"**Transcription:**\n\n{transcription_text}"
+
+        response_msg = cl.Message(
+            content=response_content,
+            elements=[audio_element],
+            metadata={
+                "transcription": transcription_text,
+                "audio_path": result["audio_path"],
+                "audio_format": result["format"],
+                "original_filename": result["original_filename"],
+            },
+        )
+        await response_msg.send()
+
+        progress_msg.content = f"✅ Audio file `{file.name}` transcribed successfully!"
+        await progress_msg.update()
+
+        return True
+
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Failed to process audio file {file.name}: {e}\n{error_trace}")
+        error_msg = (
+            f"❌ Failed to transcribe audio file `{file.name}`: {str(e)}\n\n"
+            "Please ensure:\n"
+            "- The file is a valid audio format (.mp3, .wav, .m4a)\n"
+            "- The file is not corrupted\n"
+            "- OpenAI API key is configured correctly\n\n"
+            f"Error details: {type(e).__name__}"
+        )
+        progress_msg.content = error_msg
+        await progress_msg.update()
+        return False
 
 
 async def _process_file(file: cl.File) -> bool:
@@ -111,9 +178,41 @@ async def _respond_with_general_chat(user_input: str) -> None:
     response = cl.Message(content="")
     await response.send()
     
+    # Use stream_chat() wrapped in make_async since astream_chat() 
+    # returns a coroutine instead of an async iterator for SimpleChatEngine
+    # We need to run the synchronous generator iteration in a thread to avoid blocking
     full_response = ""
-    async for token in chat_engine.astream_chat(user_input):
-        full_response += token.delta
+    
+    def _collect_tokens():
+        """Collect all tokens from the stream in a thread."""
+        tokens = []
+        for token in chat_engine.stream_chat(user_input):
+            tokens.append(token)
+        return tokens
+    
+    tokens = await asyncio.to_thread(_collect_tokens)
+    
+    # Stream the collected tokens asynchronously with throttling
+    # Update every few tokens to avoid "Too many packets in payload" error
+    update_interval = 5  # Update every 5 tokens
+    for idx, token in enumerate(tokens):
+        if hasattr(token, 'delta'):
+            full_response += token.delta
+        elif hasattr(token, 'response'):
+            # If token has a response attribute, use it
+            full_response = str(token.response)
+        else:
+            full_response += str(token)
+        
+        # Only update periodically to avoid overwhelming WebSocket
+        if (idx + 1) % update_interval == 0 or idx == len(tokens) - 1:
+            response.content = full_response
+            await response.update()
+            # Small delay to prevent overwhelming the WebSocket
+            await asyncio.sleep(0.01)
+    
+    # Final update to ensure complete response is shown
+    if full_response:
         response.content = full_response
         await response.update()
 
@@ -312,8 +411,9 @@ async def on_chat_start():
         cl.user_session.set("active_assistant", None)
 
     welcome_message = (
-        "👋 Welcome! You can start chatting right away or optionally upload a text file (📎) "
-        "if you want me to answer questions about that document."
+        "👋 Welcome! You can start chatting right away, upload a text file (📎) "
+        "if you want me to answer questions about that document, or upload an audio file "
+        "(.mp3, .wav, .m4a) to get it transcribed automatically."
     )
     
     # Add assistant information
@@ -338,27 +438,107 @@ async def on_chat_start():
     await cl.Message(content=welcome_message).send()
 
 
+async def _process_audio_element(audio_element: cl.Audio) -> bool:
+    """
+    Process an Audio element by transcribing it with OpenAI Whisper API.
+    
+    Args:
+        audio_element: Chainlit Audio element
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    logger.info(f"Processing Audio element: name={audio_element.name}, path={audio_element.path}")
+    
+    # Create a temporary File-like object for compatibility with _process_audio_file
+    # We'll pass the path and name directly to transcribe_audio
+    class AudioFileWrapper:
+        def __init__(self, audio_elem: cl.Audio):
+            self.name = audio_elem.name
+            self.path = audio_elem.path
+            self.mime = audio_elem.mime or ""
+    
+    file_wrapper = AudioFileWrapper(audio_element)
+    return await _process_audio_file(file_wrapper)
+
+
 @cl.on_message
 async def main(message: cl.Message):
     """Handle incoming messages and document QA."""
     # Handle file uploads if present
     if message.elements:
+        audio_processed = False
+        logger.info(f"Message has {len(message.elements)} elements")
         for element in message.elements:
-            if isinstance(element, cl.File):
-                success = await _process_file(element)
-                if success:
-                    await cl.Message(
-                        content="✅ File processed successfully! You can now ask questions about the document."
-                    ).send()
+            logger.info(f"Element type: {type(element).__name__}, element: {element}")
+            
+            # Check for Audio elements first (Chainlit creates these for audio uploads)
+            if isinstance(element, cl.Audio):
+                logger.info(f"Audio element detected: name={element.name}, path={element.path}, mime={element.mime}")
+                try:
+                    success = await _process_audio_element(element)
+                    logger.info(f"Audio processing result: success={success}")
+                    audio_processed = True
+                    # If no text content with audio file, return early
+                    if not message.content or not message.content.strip():
+                        logger.info("No text content, returning early after audio processing")
+                        return
+                    # Continue processing text content if present
+                    break
+                except Exception as e:
+                    logger.error(f"Exception during audio processing: {e}", exc_info=True)
+                    # Still mark as processed to prevent fallthrough
+                    audio_processed = True
+                    if not message.content or not message.content.strip():
+                        return
+                    break
+            
+            elif isinstance(element, cl.File):
+                # Check if it's an audio file first
+                is_audio = is_audio_file(element.mime or "", element.name)
+                logger.info(
+                    f"File detected: name={element.name}, mime={element.mime}, "
+                    f"is_audio={is_audio}, path={element.path}"
+                )
+                if is_audio:
+                    try:
+                        success = await _process_audio_file(element)
+                        logger.info(f"Audio processing result: success={success}")
+                        audio_processed = True
+                        # If no text content with audio file, return early
+                        if not message.content or not message.content.strip():
+                            logger.info("No text content, returning early after audio processing")
+                            return
+                        # Continue processing text content if present
+                        break
+                    except Exception as e:
+                        logger.error(f"Exception during audio processing: {e}", exc_info=True)
+                        # Still mark as processed to prevent fallthrough
+                        audio_processed = True
+                        if not message.content or not message.content.strip():
+                            return
+                        break
                 else:
-                    await cl.Message(
-                        content="❌ Failed to process the file. Please ensure it's a valid text file and try again."
-                    ).send()
+                    # Process as text file
+                    success = await _process_file(element)
+                    if success:
+                        await cl.Message(
+                            content="✅ File processed successfully! You can now ask questions about the document."
+                        ).send()
+                    else:
+                        await cl.Message(
+                            content="❌ Failed to process the file. Please ensure it's a valid text file and try again."
+                        ).send()
 
-                # If no text content with file, return early
-                if not message.content or not message.content.strip():
-                    return
-                break
+                    # If no text content with file, return early
+                    if not message.content or not message.content.strip():
+                        return
+                    break
+        
+        # If we processed an audio file and there's no text content, return early
+        if audio_processed and (not message.content or not message.content.strip()):
+            logger.info("Returning early after audio processing (no text content)")
+            return
 
     user_content = message.content or ""
 
@@ -471,12 +651,12 @@ async def main(message: cl.Message):
     
     full_response = ""
     text_elements: list[cl.Text] = []
+    token_count = 0
     
     async for token in chat_engine.astream_chat(user_content):
         if token.delta:
             full_response += token.delta
-            response.content = full_response
-            await response.update()
+            token_count += 1
         
         # Extract source nodes if available
         if hasattr(token, "source_nodes") and token.source_nodes:
@@ -490,6 +670,19 @@ async def main(message: cl.Message):
                             display="side",
                         )
                     )
+        
+        # Throttle updates: update every 5 tokens to avoid "Too many packets" error
+        # Also update on first token to show immediate feedback
+        update_interval = 5
+        if token_count == 1 or token_count % update_interval == 0:
+            response.content = full_response
+            await response.update()
+            # Small delay to prevent overwhelming the WebSocket
+            await asyncio.sleep(0.01)
+    
+    # Final update to ensure complete response is shown
+    # (in case the last update didn't happen due to throttling)
+    response.content = full_response
     
     # Update response with source elements
     if text_elements:
@@ -497,7 +690,8 @@ async def main(message: cl.Message):
         full_response += f"\nSources: {', '.join(source_names)}"
         response.content = full_response
         response.elements = text_elements
-        await response.update()
+    
+    await response.update()
 
 
 @cl.on_audio_chunk

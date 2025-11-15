@@ -97,6 +97,7 @@ def init_database():
             Column('language', String),
             Column('forId', String),
             Column('mime', String),
+            Column('autoPlay', Integer),  # Boolean stored as INTEGER (0/1)
             Column('props', Text),
         )
 
@@ -137,6 +138,11 @@ def init_database():
             ensure_column(conn, "elements", "props", "TEXT")
         except Exception as e:
             print(f"⚠ Warning: Could not add props column: {e}")
+
+        try:
+            ensure_column(conn, "elements", "autoPlay", "INTEGER")
+        except Exception as e:
+            print(f"⚠ Warning: Could not add autoPlay column: {e}")
 
         try:
             ensure_column(conn, "steps", "defaultOpen", "INTEGER")
