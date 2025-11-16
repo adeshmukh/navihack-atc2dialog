@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
@@ -192,6 +193,8 @@ def parse_atc_conversation(transcript: str, md5_hash: str | None = None, user_ca
         cached_parsed = _get_cached_parsed_conversation(md5_hash)
         if cached_parsed is not None:
             logger.info(f"Using cached parsed conversation (MD5: {md5_hash})")
+            # Add a 3-second pause to simulate processing time when using cache
+            time.sleep(3)
             return cached_parsed
 
     logger.info(f"Parsing ATC conversation from transcript ({len(transcript)} chars)")
