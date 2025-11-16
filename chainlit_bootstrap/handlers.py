@@ -31,13 +31,13 @@ _assistant_registry = discover_assistants()
 
 def _format_parsed_conversation(parsed_conversation: list) -> str:
     """
-    Format parsed ATC conversation into readable markdown format.
+    Format parsed ATC conversation into readable markdown format (without bullets).
 
     Args:
         parsed_conversation: List of dicts with 'role' and 'message' keys
 
     Returns:
-        Formatted markdown string
+        Formatted markdown string (non-bulleted format for fallback)
     """
     if not parsed_conversation:
         return ""
@@ -46,10 +46,10 @@ def _format_parsed_conversation(parsed_conversation: list) -> str:
     for item in parsed_conversation:
         role = item.get("role", "unknown").upper()
         message = item.get("message", "")
-        # Use bold for role labels
-        formatted_lines.append(f"- **{role}**: {message}")
+        # Use bold for role labels, but no bullets (for fallback display)
+        formatted_lines.append(f"**{role}**: {message}")
 
-    return "\n".join(formatted_lines)
+    return "\n\n".join(formatted_lines)
 
 
 async def _process_audio_file(file: cl.File) -> bool:
@@ -105,18 +105,21 @@ async def _process_audio_file(file: cl.File) -> bool:
         # Parsed conversation section (show this prominently using custom element)
         if parsed_conversation:
             response_parts.append("#### ATC Dialog\n")
-            # Add formatted conversation to message content as well (for fallback rendering)
-            formatted_conversation = _format_parsed_conversation(parsed_conversation)
-            response_parts.append(formatted_conversation)
-            response_parts.append("")  # Add spacing
-            # Create custom conversation view element
+            # Create custom conversation view element as primary display method
+            # Use display="inline" to ensure it renders in the message flow
             conversation_element = cl.CustomElement(
                 name="ConversationView",
                 props={
                     "conversation": parsed_conversation
-                }
+                },
+                display="inline"
             )
             elements.append(conversation_element)
+            # Add non-bulleted fallback text (in case custom element doesn't render)
+            # This provides a readable format without bullets as backup
+            fallback_text = _format_parsed_conversation(parsed_conversation)
+            if fallback_text:
+                response_parts.append(fallback_text)
         elif parsing_error:
             response_parts.append(
                 f"#### ATC Dialog\n"
