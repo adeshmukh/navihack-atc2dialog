@@ -13,6 +13,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 import chainlit as cl
 
 from .assistants import AssistantDescriptor, discover_assistants
+from .atc_parser import parse_atc_conversation
 from .audio import is_audio_file, transcribe_audio
 from .charts import histogram_from_values
 from .llm import embeddings, llm, text_splitter
@@ -28,9 +29,33 @@ logger = logging.getLogger(__name__)
 _assistant_registry = discover_assistants()
 
 
+def _format_parsed_conversation(parsed_conversation: list) -> str:
+    """
+    Format parsed ATC conversation into readable markdown format.
+
+    Args:
+        parsed_conversation: List of dicts with 'role' and 'message' keys
+
+    Returns:
+        Formatted markdown string
+    """
+    if not parsed_conversation:
+        return ""
+
+    formatted_lines = []
+    for item in parsed_conversation:
+        role = item.get("role", "unknown").upper()
+        message = item.get("message", "")
+        # Use bold for role labels
+        formatted_lines.append(f"- **{role}**: {message}")
+
+    return "\n".join(formatted_lines)
+
+
 async def _process_audio_file(file: cl.File) -> bool:
     """
-    Process an uploaded audio file by transcribing it with OpenAI Whisper API.
+    Process an uploaded audio file by transcribing it with OpenAI Whisper API
+    and parsing it into structured ATC conversation format.
 
     Args:
         file: Chainlit File object representing the uploaded audio file
@@ -43,10 +68,23 @@ async def _process_audio_file(file: cl.File) -> bool:
     await progress_msg.send()
 
     try:
-        # Transcribe the audio file (wrap sync function in async)
+        # Step 1: Transcribe the audio file (wrap sync function in async)
         logger.info(f"Calling transcribe_audio for {file.path}")
         result = await cl.make_async(transcribe_audio)(file.path, file.name)
-        logger.info(f"Transcription successful: {len(result.get('transcription', ''))} characters")
+        transcription_text = result["transcription"]
+        logger.info(f"Transcription successful: {len(transcription_text)} characters")
+
+        # Step 2: Parse the transcript into structured conversation
+        parsed_conversation = None
+        parsing_error = None
+        try:
+            logger.info("Parsing transcript into ATC conversation format")
+            parsed_conversation = await cl.make_async(parse_atc_conversation)(transcription_text)
+            logger.info(f"Successfully parsed {len(parsed_conversation)} conversation messages")
+        except Exception as e:
+            logger.warning(f"Failed to parse ATC conversation: {e}")
+            parsing_error = str(e)
+            # Continue even if parsing fails - we'll still show the raw transcript
 
         # Create audio element for playback
         audio_element = cl.Audio(
@@ -55,23 +93,60 @@ async def _process_audio_file(file: cl.File) -> bool:
             display="inline",
         )
 
-        # Send response with transcription and audio player
-        transcription_text = result["transcription"]
-        response_content = f"**Transcription:**\n\n{transcription_text}"
+        # Build response content with collapsible transcript and parsed conversation
+        response_parts = []
+
+        # Audio player section
+        response_parts.append("🎤 **Audio Transcription Complete**\n")
+
+        # Parsed conversation section (show this prominently)
+        if parsed_conversation:
+            response_parts.append("### Parsed Conversation\n")
+            formatted_conversation = _format_parsed_conversation(parsed_conversation)
+            response_parts.append(formatted_conversation)
+            response_parts.append("")  # Empty line for spacing
+        elif parsing_error:
+            response_parts.append(
+                f"### Parsed Conversation\n"
+                f"⚠️ Failed to parse conversation: {parsing_error}\n"
+            )
+        else:
+            response_parts.append(
+                "### Parsed Conversation\n"
+                "⚠️ Could not parse conversation.\n"
+            )
+
+        # Raw transcript section (collapsible using HTML details/summary)
+        # Since process_html=true in chainlit.toml, HTML tags should work
+        response_parts.append("### Raw Transcript")
+        response_parts.append("")  # Empty line before collapsible section
+        response_parts.append("<details><summary>Click to expand raw transcript</summary>")
+        response_parts.append("")  # Empty line
+        # Use markdown code block to preserve formatting (newlines, etc.)
+        response_parts.append("```")
+        response_parts.append(transcription_text)
+        response_parts.append("```")
+        response_parts.append("</details>")
+        response_content = "\n".join(response_parts)
+
+        # Prepare metadata
+        metadata = {
+            "transcription": transcription_text,
+            "audio_path": result["audio_path"],
+            "audio_format": result["format"],
+            "original_filename": result["original_filename"],
+        }
+        if parsed_conversation:
+            metadata["parsed_conversation"] = parsed_conversation
 
         response_msg = cl.Message(
             content=response_content,
             elements=[audio_element],
-            metadata={
-                "transcription": transcription_text,
-                "audio_path": result["audio_path"],
-                "audio_format": result["format"],
-                "original_filename": result["original_filename"],
-            },
+            metadata=metadata,
         )
         await response_msg.send()
 
-        progress_msg.content = f"✅ Audio file `{file.name}` transcribed successfully!"
+        progress_msg.content = f"✅ Audio file `{file.name}` transcribed and parsed successfully!"
         await progress_msg.update()
 
         return True
