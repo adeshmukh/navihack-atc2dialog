@@ -23,11 +23,11 @@ Transcript: "San Diego Tower, United 123, ready for departure runway 27. United 
 
 Output:
 [
-  {"role": "pilot", "message": "San Diego Tower, United 123, ready for departure runway 27."},
-  {"role": "atc", "message": "United 123, cleared for takeoff runway 27, wind 270 at 10."},
-  {"role": "pilot", "message": "United 123, rolling."},
-  {"role": "atc", "message": "United 123, contact departure on 124.5."},
-  {"role": "pilot", "message": "United 123, switching to departure."}
+  {"role": "pilot", "message": "San Diego Tower, United 123, ready for departure runway 27.", "annotations": [{"text": "United 123", "type": "who"}, {"text": "ready for departure", "type": "what"}]},
+  {"role": "atc", "message": "United 123, cleared for takeoff runway 27, wind 270 at 10.", "annotations": [{"text": "United 123", "type": "who"}, {"text": "cleared for takeoff", "type": "what"}]},
+  {"role": "pilot", "message": "United 123, rolling.", "annotations": [{"text": "United 123", "type": "who"}, {"text": "rolling", "type": "what"}]},
+  {"role": "atc", "message": "United 123, contact departure on 124.5.", "annotations": [{"text": "United 123", "type": "who"}, {"text": "contact departure", "type": "what"}]},
+  {"role": "pilot", "message": "United 123, switching to departure.", "annotations": [{"text": "United 123", "type": "who"}, {"text": "switching", "type": "what"}]}
 ]
 
 Example 2:
@@ -35,11 +35,11 @@ Transcript: "Ground, American 456, request taxi to runway 18. American 456, taxi
 
 Output:
 [
-  {"role": "pilot", "message": "Ground, American 456, request taxi to runway 18."},
-  {"role": "atc", "message": "American 456, taxi via Alpha, Bravo, hold short of runway 18."},
-  {"role": "pilot", "message": "American 456, taxiing via Alpha, Bravo, hold short runway 18."},
-  {"role": "atc", "message": "American 456, runway 18, cleared for takeoff."},
-  {"role": "pilot", "message": "American 456, cleared for takeoff runway 18."}
+  {"role": "pilot", "message": "Ground, American 456, request taxi to runway 18.", "annotations": [{"text": "American 456", "type": "who"}, {"text": "request taxi", "type": "what"}]},
+  {"role": "atc", "message": "American 456, taxi via Alpha, Bravo, hold short of runway 18.", "annotations": [{"text": "American 456", "type": "who"}, {"text": "taxi", "type": "what"}]},
+  {"role": "pilot", "message": "American 456, taxiing via Alpha, Bravo, hold short runway 18.", "annotations": [{"text": "American 456", "type": "who"}, {"text": "taxiing", "type": "what"}]},
+  {"role": "atc", "message": "American 456, runway 18, cleared for takeoff.", "annotations": [{"text": "American 456", "type": "who"}, {"text": "cleared for takeoff", "type": "what"}]},
+  {"role": "pilot", "message": "American 456, cleared for takeoff runway 18.", "annotations": [{"text": "American 456", "type": "who"}, {"text": "cleared for takeoff", "type": "what"}]}
 ]
 
 Example 3:
@@ -47,17 +47,17 @@ Transcript: "Tower, Delta 789, ready for departure. Delta 789, line up and wait 
 
 Output:
 [
-  {"role": "pilot", "message": "Tower, Delta 789, ready for departure."},
-  {"role": "atc", "message": "Delta 789, line up and wait runway 27."},
-  {"role": "pilot", "message": "Delta 789, lining up runway 27."},
-  {"role": "pilot", "message": "Tower, Southwest 321, ready for departure runway 27."},
-  {"role": "atc", "message": "Southwest 321, hold position."},
-  {"role": "atc", "message": "Delta 789, cleared for takeoff runway 27."},
-  {"role": "pilot", "message": "Delta 789, taking off."}
+  {"role": "pilot", "message": "Tower, Delta 789, ready for departure.", "annotations": [{"text": "Delta 789", "type": "who"}, {"text": "ready for departure", "type": "what"}]},
+  {"role": "atc", "message": "Delta 789, line up and wait runway 27.", "annotations": [{"text": "Delta 789", "type": "who"}, {"text": "line up and wait", "type": "what"}]},
+  {"role": "pilot", "message": "Delta 789, lining up runway 27.", "annotations": [{"text": "Delta 789", "type": "who"}, {"text": "lining up", "type": "what"}]},
+  {"role": "pilot", "message": "Tower, Southwest 321, ready for departure runway 27.", "annotations": [{"text": "Southwest 321", "type": "who"}, {"text": "ready for departure", "type": "what"}]},
+  {"role": "atc", "message": "Southwest 321, hold position.", "annotations": [{"text": "Southwest 321", "type": "who"}, {"text": "hold position", "type": "what"}]},
+  {"role": "atc", "message": "Delta 789, cleared for takeoff runway 27.", "annotations": [{"text": "Delta 789", "type": "who"}, {"text": "cleared for takeoff", "type": "what"}]},
+  {"role": "pilot", "message": "Delta 789, taking off.", "annotations": [{"text": "Delta 789", "type": "who"}, {"text": "taking off", "type": "what"}]}
 ]
 """
 
-PROMPT_TEMPLATE = """You are an expert at parsing Air Traffic Control (ATC) radio communications transcripts. Your task is to identify the speaker role (ATC or pilot) and break the transcript into individual messages.
+PROMPT_TEMPLATE = """You are an expert at parsing Air Traffic Control (ATC) radio communications transcripts. Your task is to identify the speaker role (ATC or pilot), break the transcript into individual messages, and annotate each message with "who" and "what" components using MINIMAL text spans.
 
 Guidelines:
 - ATC messages typically contain clearances, instructions, frequencies, and control commands
@@ -65,6 +65,16 @@ Guidelines:
 - When multiple pilots are present, they are identified by their callsigns (e.g., "United 123", "Delta 789")
 - Break messages at natural conversation boundaries
 - Each message should be a complete thought or exchange
+
+Annotation Guidelines:
+- "who": Callsign/aircraft ID ONLY - use the minimal text span (e.g., "United 123", "Delta 789", "American 456")
+- "what": Action/instruction/clearance ONLY - use the MINIMAL text span that captures the core action (e.g., "cleared for takeoff", "taxi", "ready for departure", "rolling", "switching")
+- DO NOT annotate "why" - skip this entirely
+- Use MINIMAL text spans - highlight only the essential words, not entire phrases
+- For "what", focus on the core verb/action (e.g., "taxi" not "taxi via Alpha, Bravo, hold short of runway 18")
+- Only annotate parts of the message that clearly answer who/what - do not force annotations
+- Each annotation should be an exact text span from the message
+- A message may have zero or more annotations of each type
 - Output ONLY valid JSON array format, no additional text
 
 Few-shot examples:
@@ -122,15 +132,16 @@ def _save_parsed_conversation_to_cache(md5_hash: str, parsed_conversation: List[
 
 def parse_atc_conversation(transcript: str, md5_hash: str | None = None) -> List[Dict[str, str]]:
     """
-    Parse an ATC transcript into structured conversation format with role identification.
+    Parse an ATC transcript into structured conversation format with role identification and annotations.
 
     Args:
         transcript: Raw transcript text from audio transcription
         md5_hash: Optional MD5 hash of the audio file for caching
 
     Returns:
-        List of dictionaries with 'role' and 'message' keys:
-        [{"role": "atc"|"pilot", "message": "..."}, ...]
+        List of dictionaries with 'role', 'message', and optional 'annotations' keys:
+        [{"role": "atc"|"pilot", "message": "...", "annotations": [{"text": "...", "type": "who|what"}, ...]}, ...]
+        Note: Only "who" and "what" annotations are processed (not "why").
 
     Raises:
         ValueError: If parsing fails or returns invalid format
@@ -197,6 +208,30 @@ def parse_atc_conversation(transcript: str, md5_hash: str | None = None) -> List
                 logger.warning(f"Unexpected role '{item['role']}' in item {idx}, normalizing")
                 # Normalize role to valid values
                 item["role"] = "atc" if item["role"].lower() in ["atc", "controller", "tower", "ground"] else "pilot"
+            
+            # Validate annotations if present (optional field for backward compatibility)
+            if "annotations" in item:
+                if not isinstance(item["annotations"], list):
+                    logger.warning(f"Item {idx} has invalid annotations format, removing annotations")
+                    item["annotations"] = []
+                else:
+                    # Validate each annotation
+                    valid_annotations = []
+                    for ann_idx, ann in enumerate(item["annotations"]):
+                        if isinstance(ann, dict) and "text" in ann and "type" in ann:
+                            if ann["type"] in ["who", "what"]:
+                                valid_annotations.append(ann)
+                            elif ann["type"] == "why":
+                                # Skip "why" annotations - we no longer process them
+                                logger.debug(f"Item {idx}, annotation {ann_idx} has type 'why', skipping")
+                            else:
+                                logger.warning(f"Item {idx}, annotation {ann_idx} has invalid type '{ann['type']}', skipping")
+                        else:
+                            logger.warning(f"Item {idx}, annotation {ann_idx} missing 'text' or 'type' field, skipping")
+                    item["annotations"] = valid_annotations
+            else:
+                # Add empty annotations list for backward compatibility
+                item["annotations"] = []
 
         logger.info(f"Successfully parsed {len(parsed_conversation)} conversation messages")
         

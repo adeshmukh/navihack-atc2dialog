@@ -52,15 +52,79 @@ def _format_parsed_conversation(parsed_conversation: list) -> str:
     return "\n\n".join(formatted_lines)
 
 
+def _format_message_with_annotations(message: str, annotations: list) -> str:
+    """
+    Format a message by replacing annotated text spans with emoji-marked inline code.
+    
+    Args:
+        message: Original message text
+        annotations: List of annotation dicts with 'text' and 'type' keys
+    
+    Returns:
+        Formatted message with annotations highlighted
+    """
+    if not annotations:
+        return message
+    
+    # Emoji mapping for annotation types
+    emoji_map = {
+        "who": "👤",
+        "what": "⚡"
+    }
+    
+    # Build list of replacements with their positions in the original message
+    # Sort annotations by length (longest first) to handle overlapping cases
+    # where longer annotations should take precedence
+    replacements = []
+    for ann in sorted(annotations, key=lambda x: len(x.get("text", "")), reverse=True):
+        ann_text = ann.get("text", "")
+        ann_type = ann.get("type", "")
+        if not ann_text or ann_type not in emoji_map:
+            continue
+        
+        emoji = emoji_map[ann_type]
+        # Find the first occurrence of this text in the message
+        # (assuming annotations reference unique spans)
+        pos = message.find(ann_text)
+        if pos != -1:
+            formatted_text = f"{emoji} `{ann_text}`"
+            replacements.append((pos, pos + len(ann_text), formatted_text, ann_text))
+    
+    # Remove overlapping replacements (keep longest when overlaps occur)
+    # Sort by start position, then filter overlaps
+    replacements.sort(key=lambda x: (x[0], -x[1]))  # Sort by start, then by length (descending)
+    filtered_replacements = []
+    for i, (start, end, replacement, orig_text) in enumerate(replacements):
+        # Check if this replacement overlaps with any already added
+        overlaps = False
+        for prev_start, prev_end, _ in filtered_replacements:
+            if not (end <= prev_start or start >= prev_end):
+                overlaps = True
+                break
+        if not overlaps:
+            filtered_replacements.append((start, end, replacement))
+    
+    # Sort by start position descending (replace from end to start to preserve indices)
+    filtered_replacements.sort(key=lambda x: x[0], reverse=True)
+    
+    # Apply replacements
+    formatted_message = message
+    for start_pos, end_pos, replacement in filtered_replacements:
+        formatted_message = formatted_message[:start_pos] + replacement + formatted_message[end_pos:]
+    
+    return formatted_message
+
+
 def _render_conversation_with_indicators(parsed_conversation: list) -> str:
     """
     Render parsed ATC conversation with emoji/symbol indicators for visual distinction.
+    Includes highlighting of who/what/why components using emojis and inline code formatting.
     
     Args:
-        parsed_conversation: List of dicts with 'role' and 'message' keys
+        parsed_conversation: List of dicts with 'role', 'message', and optional 'annotations' keys
     
     Returns:
-        Markdown string with emoji indicators
+        Markdown string with emoji indicators and highlighted components
     """
     if not parsed_conversation:
         return ""
@@ -69,6 +133,7 @@ def _render_conversation_with_indicators(parsed_conversation: list) -> str:
     for item in parsed_conversation:
         role = item.get("role", "unknown").lower()
         message = item.get("message", "")
+        annotations = item.get("annotations", [])
         role_display = role.upper()
         
         # Use emoji indicators for visual distinction
@@ -77,8 +142,11 @@ def _render_conversation_with_indicators(parsed_conversation: list) -> str:
         else:  # pilot
             indicator = "🟣"  # Purple circle for Pilot
         
+        # Format message with annotations if available
+        formatted_message = _format_message_with_annotations(message, annotations)
+        
         # Format with emoji indicator
-        lines.append(f'{indicator} **{role_display}**: {message}\n')
+        lines.append(f'{indicator} **{role_display}**: {formatted_message}\n')
     
     return '\n'.join(lines)
 
