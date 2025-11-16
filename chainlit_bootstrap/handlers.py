@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import random
 import uuid
 
 import chromadb
@@ -15,13 +14,7 @@ import chainlit as cl
 from .assistants import AssistantDescriptor, discover_assistants
 from .atc_parser import parse_atc_conversation
 from .audio import is_audio_file, transcribe_audio
-from .charts import histogram_from_values
 from .llm import embeddings, llm, text_splitter
-from .search import (
-    TavilyNotConfiguredError,
-    is_web_search_configured,
-    run_web_search,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +112,10 @@ def _render_conversation_with_indicators(parsed_conversation: list) -> str:
     """
     Render parsed ATC conversation with emoji/symbol indicators for visual distinction.
     Includes highlighting of who/what/why components using emojis and inline code formatting.
+    Bolds entire ATC messages that are directed at the user (when highlight_for_user is true).
     
     Args:
-        parsed_conversation: List of dicts with 'role', 'message', and optional 'annotations' keys
+        parsed_conversation: List of dicts with 'role', 'message', optional 'annotations', and optional 'highlight_for_user' keys
     
     Returns:
         Markdown string with emoji indicators and highlighted components
@@ -134,6 +128,7 @@ def _render_conversation_with_indicators(parsed_conversation: list) -> str:
         role = item.get("role", "unknown").lower()
         message = item.get("message", "")
         annotations = item.get("annotations", [])
+        highlight_for_user = item.get("highlight_for_user", False)
         role_display = role.upper()
         
         # Use emoji indicators for visual distinction
@@ -144,6 +139,10 @@ def _render_conversation_with_indicators(parsed_conversation: list) -> str:
         
         # Format message with annotations if available
         formatted_message = _format_message_with_annotations(message, annotations)
+        
+        # If this ATC message is directed at the user, bold the entire message
+        if role == "atc" and highlight_for_user:
+            formatted_message = f"**{formatted_message}**"
         
         # Format with emoji indicator
         lines.append(f'{indicator} **{role_display}**: {formatted_message}\n')
@@ -179,7 +178,13 @@ async def _process_audio_file(file: cl.File) -> bool:
         parsing_error = None
         try:
             logger.info("Parsing transcript into ATC conversation format")
-            parsed_conversation = await cl.make_async(parse_atc_conversation)(transcription_text, md5_hash=md5_hash)
+            # Get user's callsign from session
+            user_callsign = cl.user_session.get("user_callsign")
+            parsed_conversation = await cl.make_async(parse_atc_conversation)(
+                transcription_text, 
+                md5_hash=md5_hash, 
+                user_callsign=user_callsign
+            )
             logger.info(f"Successfully parsed {len(parsed_conversation)} conversation messages")
         except Exception as e:
             logger.warning(f"Failed to parse ATC conversation: {e}")
@@ -431,114 +436,6 @@ def _parse_assistant_command(user_input: str) -> tuple[str | None, str]:
     return None, trimmed
 
 
-def _extract_search_query(user_input: str) -> str | None:
-    """Return the search query if the user prefixed their message with a search command."""
-    if not user_input:
-        return None
-
-    trimmed = user_input.strip()
-    lower_trimmed = trimmed.lower()
-
-    if lower_trimmed.startswith("/search"):
-        parts = trimmed.split(maxsplit=1)
-        return parts[1].strip() if len(parts) > 1 else ""
-    if lower_trimmed.startswith("!search"):
-        parts = trimmed.split(maxsplit=1)
-        return parts[1].strip() if len(parts) > 1 else ""
-    for prefix in ("search:", "web:", "lookup:"):
-        if lower_trimmed.startswith(prefix):
-            return trimmed[len(prefix) :].strip()
-
-    return None
-
-
-def _parse_chart_request(user_input: str) -> int | None:
-    """Return the requested sample size if the user issued a /chart command."""
-    if not user_input:
-        return None
-
-    trimmed = user_input.strip()
-    if not trimmed.lower().startswith("/chart"):
-        return None
-
-    parts = trimmed.split()
-    if len(parts) == 1:
-        return 200
-
-    try:
-        requested = int(parts[1])
-    except ValueError:
-        return 200
-
-    return max(20, min(2000, requested))
-
-
-async def _respond_with_demo_chart(sample_size: int) -> None:
-    """Render a Seaborn histogram and return it as a Chainlit attachment."""
-    rng = random.Random(sample_size)
-    values = [rng.gauss(mu=0, sigma=1) for _ in range(sample_size)]
-
-    chart = histogram_from_values(
-        values, title=f"Demo distribution (n={sample_size})"
-    )
-
-    await cl.Message(
-        content=(
-            "📊 Here's a Seaborn-powered histogram rendered in Chainlit.\n"
-            "Use `/chart <sample_size>` to choose between 20 and 2000 points."
-        ),
-        elements=[chart],
-    ).send()
-
-
-async def _respond_with_web_search(query: str) -> None:
-    """Execute a Tavily web search and stream the results back to the user."""
-    if not query:
-        await cl.Message(
-            content="Please provide a query after the `/search` command. Example: `/search latest Chainlit release`"
-        ).send()
-        return
-
-    progress = cl.Message(content=f"🔎 Searching the web for `{query}`...")
-    await progress.send()
-
-    try:
-        results = await cl.make_async(run_web_search)(query)
-    except TavilyNotConfiguredError:
-        progress.content = (
-            "⚠️ Web search is not configured. "
-            "Set the `TAVILY_API_KEY` environment variable and restart the app."
-        )
-        await progress.update()
-        return
-    except Exception as exc:  # noqa: BLE001
-        progress.content = f"❌ Web search failed: {type(exc).__name__}: {exc}"
-        await progress.update()
-        return
-
-    if not results:
-        progress.content = f"🔎 No web results found for `{query}`."
-        await progress.update()
-        return
-
-    formatted_results = []
-    for idx, result in enumerate(results, start=1):
-        title = result.get("title") or "Untitled result"
-        url = result.get("url") or ""
-        snippet = result.get("content") or result.get("snippet") or ""
-        if url:
-            formatted_results.append(
-                f"{idx}. **[{title}]({url})**\n{snippet}".strip()
-            )
-        else:
-            formatted_results.append(f"{idx}. **{title}**\n{snippet}".strip())
-
-    progress.content = "🔎 **Web search results:**\n\n" + "\n\n".join(
-        formatted_results
-    )
-    await progress.update()
-
-
 @cl.on_chat_start
 async def on_chat_start():
     """Initialize chat session and ensure database is initialized."""
@@ -585,32 +482,11 @@ async def on_chat_start():
     else:
         cl.user_session.set("active_assistant", None)
 
-    welcome_message = (
-        "👋 Welcome! You can start chatting right away, upload a text file (📎) "
-        "if you want me to answer questions about that document, or upload an audio file "
-        "(.mp3, .wav, .m4a) to get it transcribed automatically."
-    )
-    
-    # Add assistant information
-    if assistants:
-        assistant_list = "\n".join(
-            f"- `/{a.command}`: {a.name} - {a.description}" for a in assistants
-        )
-        welcome_message += (
-            f"\n\n**Available Assistants:**\n{assistant_list}\n\n"
-            "Use `/assistant <name>` to switch assistants, or `/<command> <message>` "
-            "to use a specific assistant directly."
-        )
-    
-    if is_web_search_configured():
-        welcome_message += (
-            "\n\nNeed the latest info? Type `/search your question` to run a live Tavily web search."
-        )
-    welcome_message += (
-        "\n\nWant a visual? Type `/chart 200` (or another size) to see a Seaborn histogram."
-    )
-
-    await cl.Message(content=welcome_message).send()
+    # Send initial identification prompt as assistant message
+    await cl.Message(
+        content="✈️ Welcome to ATC Dialog Parser!\n\nPlease identify yourself with your callsign (e.g., 'Southwest 34', 'United 123', 'Delta 789').",
+        author="assistant"
+    ).send()
 
 
 async def _process_audio_element(audio_element: cl.Audio) -> bool:
@@ -640,6 +516,18 @@ async def _process_audio_element(audio_element: cl.Audio) -> bool:
 @cl.on_message
 async def main(message: cl.Message):
     """Handle incoming messages and document QA."""
+    # Check if this is the first message (callsign identification)
+    user_callsign = cl.user_session.get("user_callsign")
+    if not user_callsign and message.content and message.content.strip():
+        # Store the callsign and acknowledge
+        callsign = message.content.strip()
+        cl.user_session.set("user_callsign", callsign)
+        await cl.Message(
+            content=f"✅ Callsign identified: **{callsign}**\n\nYou can now upload an audio file (.mp3, .wav, .m4a) to get it transcribed and see the ATC communications directed at you highlighted.",
+            author="assistant"
+        ).send()
+        return
+    
     # Handle file uploads if present
     if message.elements:
         audio_processed = False
@@ -773,16 +661,6 @@ async def main(message: cl.Message):
             await cl.Message(content=response).send()
             return
 
-    # Handle shared commands (search, chart) - these work regardless of assistant
-    raw_search_query = _extract_search_query(user_content or "")
-    if raw_search_query is not None:
-        await _respond_with_web_search(raw_search_query)
-        return
-
-    chart_sample_size = _parse_chart_request(user_content or "")
-    if chart_sample_size is not None:
-        await _respond_with_demo_chart(chart_sample_size)
-        return
 
     # Check if active assistant is set and route to it
     active_assistant_cmd = cl.user_session.get("active_assistant")

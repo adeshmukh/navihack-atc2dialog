@@ -57,7 +57,7 @@ Output:
 ]
 """
 
-PROMPT_TEMPLATE = """You are an expert at parsing Air Traffic Control (ATC) radio communications transcripts. Your task is to identify the speaker role (ATC or pilot), break the transcript into individual messages, and annotate each message with "who" and "what" components using MINIMAL text spans.
+PROMPT_TEMPLATE_NO_USER = """You are an expert at parsing Air Traffic Control (ATC) radio communications transcripts. Your task is to identify the speaker role (ATC or pilot), break the transcript into individual messages, and annotate each message with "who" and "what" components using MINIMAL text spans.
 
 Guidelines:
 - ATC messages typically contain clearances, instructions, frequencies, and control commands
@@ -75,6 +75,42 @@ Annotation Guidelines:
 - Only annotate parts of the message that clearly answer who/what - do not force annotations
 - Each annotation should be an exact text span from the message
 - A message may have zero or more annotations of each type
+- Output ONLY valid JSON array format, no additional text
+
+Few-shot examples:
+{FEW_SHOT_EXAMPLES}
+
+Now parse this transcript:
+
+Transcript: {transcript}
+
+Output JSON array:"""
+
+PROMPT_TEMPLATE_WITH_USER = """You are an expert at parsing Air Traffic Control (ATC) radio communications transcripts. Your task is to identify the speaker role (ATC or pilot), break the transcript into individual messages, and annotate each message with "who" and "what" components using MINIMAL text spans.
+
+Guidelines:
+- ATC messages typically contain clearances, instructions, frequencies, and control commands
+- Pilot messages typically contain readbacks, acknowledgments, requests, and position reports
+- When multiple pilots are present, they are identified by their callsigns (e.g., "United 123", "Delta 789")
+- Break messages at natural conversation boundaries
+- Each message should be a complete thought or exchange
+
+User Context:
+- The user identifies as: {user_callsign}
+- For ATC messages, if the message is directed at {user_callsign} (i.e., the message contains or references this specific callsign), set "highlight_for_user": true
+- For all other messages, set "highlight_for_user": false
+- Compare callsigns carefully - "{user_callsign}" should match variations like "{user_callsign}" (exact match)
+
+Annotation Guidelines:
+- "who": Callsign/aircraft ID ONLY - use the minimal text span (e.g., "United 123", "Delta 789", "American 456")
+- "what": Action/instruction/clearance ONLY - use the MINIMAL text span that captures the core action (e.g., "cleared for takeoff", "taxi", "ready for departure", "rolling", "switching")
+- DO NOT annotate "why" - skip this entirely
+- Use MINIMAL text spans - highlight only the essential words, not entire phrases
+- For "what", focus on the core verb/action (e.g., "taxi" not "taxi via Alpha, Bravo, hold short of runway 18")
+- Only annotate parts of the message that clearly answer who/what - do not force annotations
+- Each annotation should be an exact text span from the message
+- A message may have zero or more annotations of each type
+- Include "highlight_for_user" field in each message (true/false)
 - Output ONLY valid JSON array format, no additional text
 
 Few-shot examples:
@@ -130,17 +166,18 @@ def _save_parsed_conversation_to_cache(md5_hash: str, parsed_conversation: List[
         logger.warning(f"Failed to save parsed conversation to cache: {e}")
 
 
-def parse_atc_conversation(transcript: str, md5_hash: str | None = None) -> List[Dict[str, str]]:
+def parse_atc_conversation(transcript: str, md5_hash: str | None = None, user_callsign: str | None = None) -> List[Dict[str, str]]:
     """
     Parse an ATC transcript into structured conversation format with role identification and annotations.
 
     Args:
         transcript: Raw transcript text from audio transcription
         md5_hash: Optional MD5 hash of the audio file for caching
+        user_callsign: Optional user's callsign to highlight ATC messages directed at them
 
     Returns:
-        List of dictionaries with 'role', 'message', and optional 'annotations' keys:
-        [{"role": "atc"|"pilot", "message": "...", "annotations": [{"text": "...", "type": "who|what"}, ...]}, ...]
+        List of dictionaries with 'role', 'message', 'annotations', and optional 'highlight_for_user' keys:
+        [{"role": "atc"|"pilot", "message": "...", "annotations": [{"text": "...", "type": "who|what"}, ...], "highlight_for_user": true|false}, ...]
         Note: Only "who" and "what" annotations are processed (not "why").
 
     Raises:
@@ -160,11 +197,19 @@ def parse_atc_conversation(transcript: str, md5_hash: str | None = None) -> List
     logger.info(f"Parsing ATC conversation from transcript ({len(transcript)} chars)")
 
     try:
-        # Build the prompt
-        prompt = PROMPT_TEMPLATE.format(
-            FEW_SHOT_EXAMPLES=FEW_SHOT_EXAMPLES,
-            transcript=transcript.strip()
-        )
+        # Build the prompt based on whether user_callsign is provided
+        if user_callsign:
+            logger.info(f"Parsing with user callsign: {user_callsign}")
+            prompt = PROMPT_TEMPLATE_WITH_USER.format(
+                FEW_SHOT_EXAMPLES=FEW_SHOT_EXAMPLES,
+                transcript=transcript.strip(),
+                user_callsign=user_callsign
+            )
+        else:
+            prompt = PROMPT_TEMPLATE_NO_USER.format(
+                FEW_SHOT_EXAMPLES=FEW_SHOT_EXAMPLES,
+                transcript=transcript.strip()
+            )
 
         # Call LLM with temperature=0 for consistent parsing
         logger.debug("Calling LLM for ATC conversation parsing")

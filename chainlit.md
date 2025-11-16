@@ -1,33 +1,37 @@
-# Welcome to Chainlit! 🚀🤖
+# Welcome to ATC Dialog Parser! ✈️🎙️
 
-Hi there, Developer! 👋 We're excited to have you on board. Chainlit is a powerful tool designed to help you prototype, debug and share applications built on top of LLMs.
+Transform Air Traffic Control audio communications into structured, readable dialog with intelligent parsing.
 
-## Useful Links 🔗
+## How It Works
 
-- **Documentation:** Get started with our comprehensive [Chainlit Documentation](https://docs.chainlit.io) 📚
-- **Discord Community:** Join our friendly [Chainlit Discord](https://discord.gg/k73SQ3FyUh) to ask questions, share your projects, and connect with other developers! 💬
+### 1. Identify Yourself
+When you start a new chat session, you'll be prompted to identify your aircraft callsign (e.g., "Southwest 34", "United 123", "Delta 789").
 
-We can't wait to see what you create with Chainlit! Happy coding! 💻😊
+### 2. Upload Audio
+Upload an audio file (.mp3, .wav, .m4a) containing ATC communications. The system will:
+- Transcribe the audio using OpenAI Whisper
+- Parse the conversation into structured dialog
+- Identify ATC and pilot messages
+- **Highlight ATC messages directed at your specific callsign in bold**
 
-## Welcome screen
+### 3. Review Dialog
+The parsed dialog will show:
+- 🔵 **ATC**: Air Traffic Control communications
+- 🟣 **PILOT**: Pilot communications
+- 👤 **Who annotations**: Aircraft callsigns
+- ⚡ **What annotations**: Key actions and instructions
+- **Bold text**: ATC messages specifically directed at your callsign
 
-To modify the welcome screen, edit the `chainlit.md` file at the root of your project. If you do not want a welcome screen, just leave this file empty.
+## Features
 
-### Tips
+- **Smart Parsing**: LLM-powered conversation analysis
+- **Role Identification**: Automatic detection of ATC vs. Pilot messages
+- **Personalized Highlighting**: See which ATC communications are meant for you
+- **Semantic Annotations**: Key information highlighted with emojis
+- **Raw Transcript Access**: Collapsible section with original transcription
 
-- Upload a `.txt` file to enable document Q&A.
-- Type `/search your question` to run a live Tavily web search when you need up-to-date info.
-- Type `/chart 200` (or any number between 20 and 2000) to visualize a Seaborn histogram right in the chat.
+## Tips
 
-### Assistants
-
-This application supports multiple specialized assistants:
-
-- **List assistants**: Type `/assistant list` to see all available assistants
-- **Switch assistant**: Type `/assistant <name>` to switch your default assistant
-- **Use assistant directly**: Type `/<command> <message>` to use a specific assistant (e.g., `/health schedule appointment`)
-
-**Shared commands** (work with any assistant):
-- `/search <query>`: Web search
-- `/chart <size>`: Generate visualization
-- File uploads: Process documents for Q&A
+- Use clear, standard aviation callsigns when identifying yourself
+- Upload high-quality audio for best transcription results
+- The parser works best with standard aviation phraseology
