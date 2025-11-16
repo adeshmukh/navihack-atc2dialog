@@ -9,8 +9,9 @@ services:
     ports:
       - "${CHAINLIT_PORT:-8000}:8000"
     volumes:
-      # Mount code for hot reload in dev mode
+      # Mount code for hot reload in dev mode (exclude data directory)
       - .:/app
+      - /app/data
       # Persist database
       - chainlit_db:/app/data
       # Mount certificates for TLS (if available)

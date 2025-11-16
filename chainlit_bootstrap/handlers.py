@@ -117,15 +117,18 @@ async def _process_audio_file(file: cl.File) -> bool:
             )
 
         # Raw transcript section (collapsible using custom element)
-        response_parts.append("### Raw Transcript")
         response_content = "\n".join(response_parts)
         
         # Create collapsible section custom element for raw transcript
+        # Ensure transcription_text is a string and not None
+        transcript_content = str(transcription_text) if transcription_text else ""
+        logger.info(f"Creating collapsible element with content length: {len(transcript_content)}")
+        
         collapsible_element = cl.CustomElement(
             name="CollapsibleSection",
             props={
-                "title": "Click to expand raw transcript",
-                "content": transcription_text
+                "title": "Raw Transcript",
+                "content": transcript_content
             }
         )
 

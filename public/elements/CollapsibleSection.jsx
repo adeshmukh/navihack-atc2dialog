@@ -1,4 +1,18 @@
-export default function CollapsibleSection({ title, content }) {
+export default function CollapsibleSection(props) {
+  // Chainlit passes props as an object
+  // Handle both direct props and nested props structure
+  const title = props?.title || props?.props?.title || 'Click to expand';
+  const content = props?.content || props?.props?.content || '';
+  
+  // Debug: log props to console to help diagnose
+  if (typeof window !== 'undefined' && window.console) {
+    console.log('CollapsibleSection all props:', JSON.stringify(props, null, 2));
+    console.log('CollapsibleSection title:', title);
+    console.log('CollapsibleSection content:', content);
+    console.log('CollapsibleSection content type:', typeof content);
+    console.log('CollapsibleSection content length:', content?.length);
+  }
+  
   return (
     <details className="collapsible-section" style={{ marginTop: '8px' }}>
       <summary 
@@ -10,7 +24,7 @@ export default function CollapsibleSection({ title, content }) {
           padding: '4px 0'
         }}
       >
-        {title || 'Click to expand'}
+        {title}
       </summary>
       <div className="collapsible-content" style={{ marginTop: '8px' }}>
         <pre style={{ 
@@ -24,7 +38,7 @@ export default function CollapsibleSection({ title, content }) {
           overflow: 'auto',
           maxHeight: '400px'
         }}>
-          {content}
+          {content || '(No content provided)'}
         </pre>
       </div>
     </details>
