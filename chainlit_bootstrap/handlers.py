@@ -106,17 +106,17 @@ async def _process_audio_file(file: cl.File) -> bool:
         if parsed_conversation:
             response_parts.append("#### ATC Dialog\n")
             # Create custom conversation view element as primary display method
-            # Use display="inline" to ensure it renders in the message flow
+            logger.info(f"Creating ConversationView element with {len(parsed_conversation)} messages")
             conversation_element = cl.CustomElement(
                 name="ConversationView",
                 props={
                     "conversation": parsed_conversation
-                },
-                display="inline"
+                }
             )
             elements.append(conversation_element)
-            # Add non-bulleted fallback text (in case custom element doesn't render)
-            # This provides a readable format without bullets as backup
+            logger.info(f"Added ConversationView element to elements list. Total elements: {len(elements)}")
+            # Add fallback text so content renders even if custom element fails
+            # This is the formatted conversation without bullets - it was what you saw before
             fallback_text = _format_parsed_conversation(parsed_conversation)
             if fallback_text:
                 response_parts.append(fallback_text)
