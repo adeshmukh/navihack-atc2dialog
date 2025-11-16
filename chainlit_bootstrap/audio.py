@@ -1,5 +1,7 @@
 """Audio transcription functionality using OpenAI Whisper API."""
 
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -25,6 +27,11 @@ _openai_client = OpenAI(api_key=OPENAI_API_KEY)
 _audio_persist_dir_str = os.getenv("AUDIO_PERSIST_DIR", ".local/data/audio/")
 AUDIO_PERSIST_DIR = Path(_audio_persist_dir_str).resolve()
 AUDIO_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+
+# Get transcript cache directory
+_transcript_cache_dir_str = os.getenv("TRANSCRIPT_CACHE_DIR", "./.local/cache/transcripts/")
+TRANSCRIPT_CACHE_DIR = Path(_transcript_cache_dir_str).resolve()
+TRANSCRIPT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def is_audio_file(mime: str, filename: str) -> bool:
@@ -63,6 +70,68 @@ def is_audio_file(mime: str, filename: str) -> bool:
     return False
 
 
+def _compute_file_md5(file_path: str) -> str:
+    """
+    Compute MD5 hash of a file's content.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        MD5 hash as hexadecimal string
+    """
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def _get_cached_transcript(md5_hash: str) -> str | None:
+    """
+    Retrieve cached transcript for a given MD5 hash.
+    
+    Args:
+        md5_hash: MD5 hash of the audio file
+        
+    Returns:
+        Cached transcript text if found, None otherwise
+    """
+    cache_file = TRANSCRIPT_CACHE_DIR / f"{md5_hash}.json"
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+                return cache_data.get("transcription")
+        except Exception as e:
+            logger.warning(f"Failed to read cache file {cache_file}: {e}")
+            return None
+    return None
+
+
+def _save_transcript_to_cache(md5_hash: str, transcription: str, original_filename: str) -> None:
+    """
+    Save transcript to cache.
+    
+    Args:
+        md5_hash: MD5 hash of the audio file
+        transcription: Transcribed text
+        original_filename: Original filename for reference
+    """
+    cache_file = TRANSCRIPT_CACHE_DIR / f"{md5_hash}.json"
+    try:
+        cache_data = {
+            "transcription": transcription,
+            "original_filename": original_filename,
+            "cached_at": datetime.now().isoformat(),
+        }
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+        logger.info(f"Transcript cached for {original_filename} (MD5: {md5_hash})")
+    except Exception as e:
+        logger.warning(f"Failed to save transcript to cache: {e}")
+
+
 def transcribe_audio(file_path: str, original_filename: str) -> Dict[str, str]:
     """
     Transcribe an audio file using OpenAI Whisper API and save it to persistent storage.
@@ -81,7 +150,30 @@ def transcribe_audio(file_path: str, original_filename: str) -> Dict[str, str]:
     Raises:
         Exception: If transcription fails or file operations fail
     """
+    stored_path = None
     try:
+        # Compute MD5 hash of the audio file for caching
+        md5_hash = _compute_file_md5(file_path)
+        logger.info(f"Computed MD5 hash for {original_filename}: {md5_hash}")
+        
+        # Check cache first
+        cached_transcription = _get_cached_transcript(md5_hash)
+        if cached_transcription is not None:
+            logger.info(f"Using cached transcript for {original_filename} (MD5: {md5_hash})")
+            transcription_text = cached_transcription
+        else:
+            # Transcribe using OpenAI Whisper API
+            logger.info(f"Transcribing {original_filename} with OpenAI API (MD5: {md5_hash})")
+            with open(file_path, "rb") as audio_file:
+                transcript_response = _openai_client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                )
+            transcription_text = transcript_response.text
+            
+            # Save to cache
+            _save_transcript_to_cache(md5_hash, transcription_text, original_filename)
+        
         # Generate unique filename for storage
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
@@ -92,15 +184,6 @@ def transcribe_audio(file_path: str, original_filename: str) -> Dict[str, str]:
         # Copy audio file to persistent storage
         shutil.copy2(file_path, stored_path)
         logger.info(f"Audio file saved to {stored_path}")
-
-        # Transcribe using OpenAI Whisper API
-        with open(stored_path, "rb") as audio_file:
-            transcript_response = _openai_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-            )
-
-        transcription_text = transcript_response.text
 
         logger.info(
             f"Transcription completed for {original_filename}: "
@@ -116,8 +199,8 @@ def transcribe_audio(file_path: str, original_filename: str) -> Dict[str, str]:
 
     except Exception as e:
         logger.error(f"Failed to transcribe audio file {original_filename}: {e}")
-        # Clean up stored file if transcription failed
-        if stored_path.exists():
+        # Clean up stored file if transcription failed and file was created
+        if stored_path is not None and stored_path.exists():
             try:
                 stored_path.unlink()
             except Exception:

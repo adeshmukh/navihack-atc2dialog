@@ -116,18 +116,18 @@ async def _process_audio_file(file: cl.File) -> bool:
                 "⚠️ Could not parse conversation.\n"
             )
 
-        # Raw transcript section (collapsible using HTML details/summary)
-        # Since process_html=true in chainlit.toml, HTML tags should work
+        # Raw transcript section (collapsible using custom element)
         response_parts.append("### Raw Transcript")
-        response_parts.append("")  # Empty line before collapsible section
-        response_parts.append("<details><summary>Click to expand raw transcript</summary>")
-        response_parts.append("")  # Empty line
-        # Use markdown code block to preserve formatting (newlines, etc.)
-        response_parts.append("```")
-        response_parts.append(transcription_text)
-        response_parts.append("```")
-        response_parts.append("</details>")
         response_content = "\n".join(response_parts)
+        
+        # Create collapsible section custom element for raw transcript
+        collapsible_element = cl.CustomElement(
+            name="CollapsibleSection",
+            props={
+                "title": "Click to expand raw transcript",
+                "content": transcription_text
+            }
+        )
 
         # Prepare metadata
         metadata = {
@@ -141,7 +141,7 @@ async def _process_audio_file(file: cl.File) -> bool:
 
         response_msg = cl.Message(
             content=response_content,
-            elements=[audio_element],
+            elements=[audio_element, collapsible_element],
             metadata=metadata,
         )
         await response_msg.send()
