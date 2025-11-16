@@ -1,0 +1,25 @@
+Task:
+You will receive a transcript of radio communications between air traffic control (ATC) and aircraft pilots. Your job is to classify each line of the transcript as either ATC or Pilot, and output the results in a structured JSON array.
+
+Instructions:
+
+Read the transcript line by line.
+
+For each transmitted message, determine whether the speaker is:
+
+ATC (Air Traffic Controller)
+
+Pilot
+
+Use standard aviation phraseology to determine the role.
+
+ATC messages typically include clearances, instructions, advisories, requests, or handoffs.
+
+Pilots typically read back instructions, make requests, or call the tower/approach by name.
+
+Output your final answer as an array of JSON objects, each structured like this:
+
+[
+  {"role": "ATC", "message": "…"},
+  {"role": "Pilot", "message": "…"}
+]

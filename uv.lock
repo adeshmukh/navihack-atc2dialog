@@ -446,6 +446,7 @@ dependencies = [
     { name = "tavily-python" },
     { name = "tiktoken" },
     { name = "typing-extensions" },
+    { name = "whisper" },
 ]
 
 [package.optional-dependencies]
@@ -480,6 +481,7 @@ requires-dist = [
     { name = "tavily-python", specifier = ">=0.3.8" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "typing-extensions", specifier = ">=4.12.0" },
+    { name = "whisper", specifier = ">=1.1.10" },
 ]
 provides-extras = ["dev", "parlant"]
 
@@ -3846,6 +3848,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1b/6c/c65773d6cab416a64d191d6ee8a8b1c68a09970ea6909d16965d26bfed1e/websockets-15.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:e09473f095a819042ecb2ab9465aee615bd9c2028e4ef7d933600a8401c79561", size = 176837, upload-time = "2025-03-05T20:02:55.237Z" },
     { url = "https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743, upload-time = "2025-03-05T20:03:39.41Z" },
 ]
+
+[[package]]
+name = "whisper"
+version = "1.1.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b4/c3/913cdd13ef3d882fa483981378a08cd0f018fd8dd95b6bf006b9bf1cfbc9/whisper-1.1.10.tar.gz", hash = "sha256:435b4fb843c4c752719bdf0511a652d5be710e9bb35ad9ebe3b133268ee31c44", size = 42835, upload-time = "2022-05-22T18:19:54.839Z" }
 
 [[package]]
 name = "wrapt"
