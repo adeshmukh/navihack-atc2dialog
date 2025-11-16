@@ -72,6 +72,7 @@ async def _process_audio_file(file: cl.File) -> bool:
         logger.info(f"Calling transcribe_audio for {file.path}")
         result = await cl.make_async(transcribe_audio)(file.path, file.name)
         transcription_text = result["transcription"]
+        md5_hash = result.get("md5_hash")
         logger.info(f"Transcription successful: {len(transcription_text)} characters")
 
         # Step 2: Parse the transcript into structured conversation
@@ -79,7 +80,7 @@ async def _process_audio_file(file: cl.File) -> bool:
         parsing_error = None
         try:
             logger.info("Parsing transcript into ATC conversation format")
-            parsed_conversation = await cl.make_async(parse_atc_conversation)(transcription_text)
+            parsed_conversation = await cl.make_async(parse_atc_conversation)(transcription_text, md5_hash=md5_hash)
             logger.info(f"Successfully parsed {len(parsed_conversation)} conversation messages")
         except Exception as e:
             logger.warning(f"Failed to parse ATC conversation: {e}")

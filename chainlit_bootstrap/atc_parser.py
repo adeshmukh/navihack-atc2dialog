@@ -2,11 +2,19 @@
 
 import json
 import logging
+import os
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, List
 
 from .llm import llm
 
 logger = logging.getLogger(__name__)
+
+# Get parsed conversation cache directory (reuse transcript cache directory)
+_transcript_cache_dir_str = os.getenv("TRANSCRIPT_CACHE_DIR", "./.local/cache/transcripts/")
+PARSED_CACHE_DIR = Path(_transcript_cache_dir_str).resolve()
+PARSED_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Few-shot examples for ATC conversation parsing
 FEW_SHOT_EXAMPLES = """
@@ -69,12 +77,56 @@ Transcript: {transcript}
 Output JSON array:"""
 
 
-def parse_atc_conversation(transcript: str) -> List[Dict[str, str]]:
+def _get_cached_parsed_conversation(md5_hash: str) -> List[Dict[str, str]] | None:
+    """
+    Retrieve cached parsed conversation for a given MD5 hash.
+    
+    Args:
+        md5_hash: MD5 hash of the audio file
+        
+    Returns:
+        Cached parsed conversation list if found, None otherwise
+    """
+    cache_file = PARSED_CACHE_DIR / f"{md5_hash}_parsed.json"
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+                return cache_data.get("parsed_conversation")
+        except Exception as e:
+            logger.warning(f"Failed to read parsed cache file {cache_file}: {e}")
+            return None
+    return None
+
+
+def _save_parsed_conversation_to_cache(md5_hash: str, parsed_conversation: List[Dict[str, str]]) -> None:
+    """
+    Save parsed conversation to cache.
+    
+    Args:
+        md5_hash: MD5 hash of the audio file
+        parsed_conversation: Parsed conversation list
+    """
+    cache_file = PARSED_CACHE_DIR / f"{md5_hash}_parsed.json"
+    try:
+        cache_data = {
+            "parsed_conversation": parsed_conversation,
+            "cached_at": datetime.now().isoformat(),
+        }
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+        logger.info(f"Parsed conversation cached (MD5: {md5_hash})")
+    except Exception as e:
+        logger.warning(f"Failed to save parsed conversation to cache: {e}")
+
+
+def parse_atc_conversation(transcript: str, md5_hash: str | None = None) -> List[Dict[str, str]]:
     """
     Parse an ATC transcript into structured conversation format with role identification.
 
     Args:
         transcript: Raw transcript text from audio transcription
+        md5_hash: Optional MD5 hash of the audio file for caching
 
     Returns:
         List of dictionaries with 'role' and 'message' keys:
@@ -86,6 +138,13 @@ def parse_atc_conversation(transcript: str) -> List[Dict[str, str]]:
     if not transcript or not transcript.strip():
         logger.warning("Empty transcript provided to parser")
         return []
+
+    # Check cache if MD5 hash is provided
+    if md5_hash:
+        cached_parsed = _get_cached_parsed_conversation(md5_hash)
+        if cached_parsed is not None:
+            logger.info(f"Using cached parsed conversation (MD5: {md5_hash})")
+            return cached_parsed
 
     logger.info(f"Parsing ATC conversation from transcript ({len(transcript)} chars)")
 
@@ -140,6 +199,11 @@ def parse_atc_conversation(transcript: str) -> List[Dict[str, str]]:
                 item["role"] = "atc" if item["role"].lower() in ["atc", "controller", "tower", "ground"] else "pilot"
 
         logger.info(f"Successfully parsed {len(parsed_conversation)} conversation messages")
+        
+        # Save to cache if MD5 hash is provided
+        if md5_hash:
+            _save_parsed_conversation_to_cache(md5_hash, parsed_conversation)
+        
         return parsed_conversation
 
     except Exception as e:

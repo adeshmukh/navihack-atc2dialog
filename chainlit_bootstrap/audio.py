@@ -146,6 +146,7 @@ def transcribe_audio(file_path: str, original_filename: str) -> Dict[str, str]:
         - audio_path: Path to the stored audio file
         - format: Audio format (from filename extension)
         - original_filename: Original filename
+        - md5_hash: MD5 hash of the audio file (for caching)
 
     Raises:
         Exception: If transcription fails or file operations fail
@@ -195,6 +196,7 @@ def transcribe_audio(file_path: str, original_filename: str) -> Dict[str, str]:
             "audio_path": str(stored_path),
             "format": file_ext.lstrip(".").lower() if file_ext else "unknown",
             "original_filename": original_filename,
+            "md5_hash": md5_hash,
         }
 
     except Exception as e:
