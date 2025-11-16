@@ -52,6 +52,37 @@ def _format_parsed_conversation(parsed_conversation: list) -> str:
     return "\n\n".join(formatted_lines)
 
 
+def _render_conversation_with_indicators(parsed_conversation: list) -> str:
+    """
+    Render parsed ATC conversation with emoji/symbol indicators for visual distinction.
+    
+    Args:
+        parsed_conversation: List of dicts with 'role' and 'message' keys
+    
+    Returns:
+        Markdown string with emoji indicators
+    """
+    if not parsed_conversation:
+        return ""
+    
+    lines = []
+    for item in parsed_conversation:
+        role = item.get("role", "unknown").lower()
+        message = item.get("message", "")
+        role_display = role.upper()
+        
+        # Use emoji indicators for visual distinction
+        if role == "atc":
+            indicator = "🔵"  # Blue circle for ATC
+        else:  # pilot
+            indicator = "🟣"  # Purple circle for Pilot
+        
+        # Format with emoji indicator
+        lines.append(f'{indicator} **{role_display}**: {message}\n')
+    
+    return '\n'.join(lines)
+
+
 async def _process_audio_file(file: cl.File) -> bool:
     """
     Process an uploaded audio file by transcribing it with OpenAI Whisper API
@@ -103,24 +134,13 @@ async def _process_audio_file(file: cl.File) -> bool:
         # Prepare elements list
         elements = [audio_element]
 
-        # Parsed conversation section (show this prominently using custom element)
+        # Parsed conversation section with visual indicators
         if parsed_conversation:
+            logger.info(f"Creating conversation with indicators for {len(parsed_conversation)} messages")
+            
+            conversation_formatted = _render_conversation_with_indicators(parsed_conversation)
             response_parts.append("#### ATC Dialog\n")
-            # Create custom conversation view element as primary display method
-            logger.info(f"Creating ConversationView element with {len(parsed_conversation)} messages")
-            conversation_element = cl.CustomElement(
-                name="ConversationView",
-                props={
-                    "conversation": parsed_conversation
-                }
-            )
-            elements.append(conversation_element)
-            logger.info(f"Added ConversationView element to elements list. Total elements: {len(elements)}")
-            # Add fallback text so content renders even if custom element fails
-            # This is the formatted conversation without bullets - it was what you saw before
-            fallback_text = _format_parsed_conversation(parsed_conversation)
-            if fallback_text:
-                response_parts.append(fallback_text)
+            response_parts.append(conversation_formatted)
         elif parsing_error:
             response_parts.append(
                 f"#### ATC Dialog\n"
@@ -134,18 +154,12 @@ async def _process_audio_file(file: cl.File) -> bool:
 
         response_content = "\n".join(response_parts)
         
-        # Create collapsible section custom element for raw transcript
+        # Create collapsible section for raw transcript
         transcript_content = str(transcription_text) if transcription_text else ""
-        logger.info(f"Creating collapsible element with content length: {len(transcript_content)}")
+        logger.info(f"Creating collapsible transcript with content length: {len(transcript_content)}")
         
-        collapsible_element = cl.CustomElement(
-            name="CollapsibleSection",
-            props={
-                "title": "Raw Transcript",
-                "content": transcript_content
-            }
-        )
-        elements.append(collapsible_element)
+        # Add as collapsible details HTML
+        response_parts.append(f'\n<details><summary>**Raw Transcript**</summary>\n\n```\n{transcript_content or "(No content provided)"}\n```\n\n</details>')
 
         # Prepare metadata
         metadata = {
