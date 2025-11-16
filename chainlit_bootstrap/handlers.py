@@ -99,29 +99,47 @@ async def _process_audio_file(file: cl.File) -> bool:
         # Audio player section
         response_parts.append("🎤 **Audio Transcription Complete**\n")
 
-        # Parsed conversation section (show this prominently)
+        # Prepare elements list
+        elements = [audio_element]
+
+        # Parsed conversation section (show this prominently using custom element)
         if parsed_conversation:
-            response_parts.append("### Parsed Conversation\n")
+            response_parts.append("#### ATC Dialog\n")
+            # Add formatted conversation to message content as well (for fallback rendering)
             formatted_conversation = _format_parsed_conversation(parsed_conversation)
             response_parts.append(formatted_conversation)
-            response_parts.append("")  # Empty line for spacing
+            response_parts.append("")  # Add spacing
+            # Create custom conversation view element
+            conversation_element = cl.CustomElement(
+                name="ConversationView",
+                props={
+                    "conversation": parsed_conversation
+                }
+            )
+            elements.append(conversation_element)
         elif parsing_error:
             response_parts.append(
-                f"### Parsed Conversation\n"
+                f"#### ATC Dialog\n"
                 f"⚠️ Failed to parse conversation: {parsing_error}\n"
             )
         else:
             response_parts.append(
-                "### Parsed Conversation\n"
+                "#### ATC Dialog\n"
                 "⚠️ Could not parse conversation.\n"
             )
 
-        # Raw transcript section (collapsible using custom element)
+        # Raw transcript section (add to message content as well for fallback)
+        response_parts.append("#### Raw Transcript\n")
+        transcript_content = str(transcription_text) if transcription_text else ""
+        # Add transcript preview to message content (first 500 chars)
+        transcript_preview = transcript_content[:500] + ("..." if len(transcript_content) > 500 else "")
+        response_parts.append(transcript_preview)
+        if len(transcript_content) > 500:
+            response_parts.append(f"\n*Full transcript ({len(transcript_content)} characters) available in collapsible section below.*")
+        
         response_content = "\n".join(response_parts)
         
         # Create collapsible section custom element for raw transcript
-        # Ensure transcription_text is a string and not None
-        transcript_content = str(transcription_text) if transcription_text else ""
         logger.info(f"Creating collapsible element with content length: {len(transcript_content)}")
         
         collapsible_element = cl.CustomElement(
@@ -131,6 +149,7 @@ async def _process_audio_file(file: cl.File) -> bool:
                 "content": transcript_content
             }
         )
+        elements.append(collapsible_element)
 
         # Prepare metadata
         metadata = {
@@ -144,7 +163,7 @@ async def _process_audio_file(file: cl.File) -> bool:
 
         response_msg = cl.Message(
             content=response_content,
-            elements=[audio_element, collapsible_element],
+            elements=elements,
             metadata=metadata,
         )
         await response_msg.send()
